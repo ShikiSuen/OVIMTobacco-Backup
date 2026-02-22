@@ -19,7 +19,7 @@ PredictorSingleton::PredictorSingleton(const char* dbFilePath)
 {
 	dictionary =
 	   DictionarySingleton::getInstance(dbFilePath);
-	tokenVector.reserve(BiGram::MAX_CONTEXT_LENGTH);
+	//tokenVector.reserve(BiGram::MAX_CONTEXT_LENGTH);
 }
 
 PredictorSingleton::~PredictorSingleton()
@@ -74,7 +74,7 @@ bool PredictorSingleton::setTokenVector(
     string keystrokes, string currentSequence,
 	size_t position, bool doReplace)
 {
-    if(!dictionary->isVocabulary(currentSequence))
+    if(!dictionary->isVocabulary(keystrokes))
         return false;
 
 	Token currentToken;
@@ -119,7 +119,7 @@ void PredictorSingleton::setFixedToken(
 void PredictorSingleton::rotateTopCandidates(size_t position)
 {
 	vector<Vocabulary> vocabularies;
-	dictionary->getVocablesByCharacters(
+	dictionary->getVocablesByKeystrokes(
 		tokenVector[position].keystrokes, vocabularies);
 	if(vocabularies.size() < ROTATE_LIMIT - 1)
 		return;
@@ -165,7 +165,7 @@ void PredictorSingleton::addCandidates(
 		case CandidateType::VOCABLE:
 		default:
 			hasCandidate =
-				dictionary->getVocablesByCharacters(
+				dictionary->getVocablesByKeystrokes(
 					characters, vocabularies);
 			break;
 	}
@@ -200,6 +200,27 @@ void PredictorSingleton::setCandidateVector(size_t position)
 	candidatePositionVector.clear();
 
 	BiGram biGram;
+	string characterString;
+	for(size_t head = 0; head <= position; head++)
+	{
+		for(size_t end = tokenVector.size() - 1; end >= position; end--)
+		{
+			if(head == end)
+				break;
+			characterString.erase();
+			for(size_t shift = head; shift <= end; shift++)
+			{
+				characterString += tokenVector[shift].characterStringVector[0];
+				if(shift < end)
+					characterString += "-";
+			}
+			addCandidates(characterString, head, CandidateType::WORD);
+		}
+	}	
+	
+	//@defgroup BackwardOnlyCandidates
+	//@{
+	/*
 	vector<string> currentCharacterCombinationVector =
 		tokenVector[position].characterStringVector;
 
@@ -226,7 +247,9 @@ void PredictorSingleton::setCandidateVector(size_t position)
 				backwardPosition,
 				CandidateType::WORD);
 	}
-
+	*/
+	//@}
+	
 	addCandidates(
 		tokenVector[position].keystrokes,
 		position,
@@ -234,14 +257,14 @@ void PredictorSingleton::setCandidateVector(size_t position)
 }
 
 void PredictorSingleton::setSelectedCandidate(
-    size_t index, size_t selectedCandidateIndex)
+    size_t position, size_t selectedCandidateIndex)
 {
 	string selectedCandidateWordString =
 		candidateVector[selectedCandidateIndex].word;
 	size_t head =
 		candidateVector[selectedCandidateIndex].position;
 	for(size_t i = head, offset = 0;
-		i <= index;
+		i <= position;
 		i++, offset += 3)	// 3 is the magical number of UTF-8 Chinese length
 	{
 		tokenVector[i].isFixed = true;
@@ -249,7 +272,11 @@ void PredictorSingleton::setSelectedCandidate(
 			selectedCandidateWordString.substr(
 				offset, 3); // UTF-8 Chinese length
 	}
-	
+
+	setTokenVectorByBigram();
+	for(size_t k = 0; k < position; k++)
+		tokenVector[k].isFixed = true;
+
 	setComposedString();
 }
 
@@ -330,20 +357,22 @@ void PredictorSingleton::setTokenVectorByBigram()
 		++end;
 	}
 
-	//<comment author='b6s' date='20070320'>
-	// Set tokens fixed when the vector size reachs MAX_CONTEXT_LENGTH.
-	if(tokenVector.size() == BiGram::MAX_CONTEXT_LENGTH ||
-		(tokenVector.size() > BiGram::MAX_CONTEXT_LENGTH &&
-		tokenVector.size() % BiGram::MAX_CONTEXT_LENGTH == 0)) {
-		int step = BiGram::MAX_CONTEXT_LENGTH;
-		vector<Token>::iterator iter = tokenVector.end();
-		while(step > 0) {
-			iter--;
-			iter->isFixed = true;
-			step--;			
-		}
+	//@defgroup FixesOlderWords
+	//@{
+	// Sets tokens fixed when the vector size reachs MAX_CONTEXT_LENGTH.
+	/*
+	if(tokenVector.size() > BiGram::MAX_CONTEXT_LENGTH) {
+		int tail = tokenVector.size() - BiGram::MAX_CONTEXT_LENGTH - 1;
+		for(int i = 0, j = tail;
+			i < BiGram::MAX_CONTEXT_LENGTH, j >= 0;
+			i++, j--)
+			tokenVector[j].isFixed = true;
+
+		while(tail < tokenVector.size() && tokenVector[tail].withSuffix)
+			tokenVector[++tail].isFixed = true;
 	}
-	//</comment>
+	*/
+	//@}
 
 	setComposedString();
 }
